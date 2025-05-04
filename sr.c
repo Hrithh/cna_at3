@@ -84,8 +84,53 @@ void A_output(struct msg message)
 
     /* 6) advance next sequence number */
     A_nextseqnum = (seq + 1) % MAX_SEQ_NUM; 
- }
-void A_input(struct pkt packet)      { }
+}
+
+void A_input(struct pkt packet)      
+{
+  int acknum, idx;
+
+    /* 1) Drop corrupted ACKs */
+    if (IsCorrupted(packet)) {
+        if (TRACE > 0)
+            printf("----A: Corrupted ACK received, ignored\n");
+        return;
+    }
+
+    acknum = packet.acknum;
+    idx    = acknum % SR_WINDOW_SIZE;
+
+    /* 2) If this ACK is new, mark it */
+    if (A_acknowledged[idx] == 0) {
+        A_acknowledged[idx] = 1;
+        new_ACKs++;
+        total_ACKs_received++;
+        if (TRACE > 0)
+            printf("----A: ACK %d received and marked\n", acknum);
+    } else {
+        if (TRACE > 0)
+            printf("----A: Duplicate ACK %d, ignored\n", acknum);
+        return;
+    }
+
+    /* 3) Slide window base forward while in-order ACKs exist */
+    while (A_acknowledged[A_base % SR_WINDOW_SIZE]) {
+        /* clear the slot and advance base */
+        A_acknowledged[A_base % SR_WINDOW_SIZE] = 0;
+        A_base = (A_base + 1) % MAX_SEQ_NUM;
+        if (TRACE > 0)
+            printf("----A: Sliding base to %d\n", A_base);
+    }
+
+    /* 4) If there are still outstanding packets, restart timer for new base */
+    if ((A_nextseqnum + MAX_SEQ_NUM - A_base) % MAX_SEQ_NUM > 0) {
+        stoptimer(A);
+        starttimer(A, TIMEOUT_INTERVAL);
+    } else {
+        stoptimer(A);
+    }
+}
+
 void A_timerinterrupt(void)          { }
 
 /* Receiver (B) stubs */
