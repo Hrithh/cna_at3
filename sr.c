@@ -131,7 +131,19 @@ void A_input(struct pkt packet)
     }
 }
 
-void A_timerinterrupt(void)          { }
+void A_timerinterrupt(void)          
+{
+  int idx = A_base % SR_WINDOW_SIZE;
+
+    /* Log and retransmit the base packet */
+    if (TRACE > 0)
+        printf("----A: Timer expired, resending packet %d\n", A_base);
+    tolayer3(A, A_window[idx]);
+    packets_resent++;
+
+    /* Restart timer for this packet */
+    starttimer(A, TIMEOUT_INTERVAL);
+}
 
 /* Receiver (B) stubs */
 void B_init(void)                    
