@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "emulator.h"
-#include "gbn.h"
+#include "sr.h"
 
 /* ******************************************************************
    Go Back N protocol.  Adapted from J.F.Kurose
@@ -96,7 +96,7 @@ void A_output(struct msg message)
   tolayer3(A, sendpkt);
   if (TRACE > 0)
     printf("----A: Sent packet %d\n", sendpkt.seqnum);
-  packets_sent++;
+  //packets_sent++;
 
   // Start timer for this packet
   starttimer(A, TIMEOUT_INTERVAL);
