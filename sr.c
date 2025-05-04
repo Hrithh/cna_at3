@@ -71,45 +71,38 @@ extern int A_nextseqnum;
 /* called from layer 5 (application layer), passed the message to be sent to other side */
 void A_output(struct msg message)
 {
-  struct pkt sendpkt;
-  int i;
-
-  /* if not blocked waiting on ACK */
-  if ( windowcount < WINDOWSIZE) {
-    if (TRACE > 1)
-      printf("----A: New message arrives, send window is not full, send new messge to layer3!\n");
-
-    /* create packet */
-    sendpkt.seqnum = A_nextseqnum;
-    sendpkt.acknum = NOTINUSE;
-    for ( i=0; i<20 ; i++ )
-      sendpkt.payload[i] = message.data[i];
-    sendpkt.checksum = ComputeChecksum(sendpkt);
-
-    /* put packet in window buffer */
-    /* windowlast will always be 0 for alternating bit; but not for GoBackN */
-    windowlast = (windowlast + 1) % WINDOWSIZE;
-    buffer[windowlast] = sendpkt;
-    windowcount++;
-
-    /* send out packet */
+  if ((A_nextseqnum + MAX_SEQ_NUM - A_base) % MAX_SEQ_NUM >= SR_WINDOW_SIZE) {
     if (TRACE > 0)
-      printf("Sending packet %d to layer 3\n", sendpkt.seqnum);
-    tolayer3 (A, sendpkt);
-
-    /* start timer if first packet in window */
-    if (windowcount == 1)
-      starttimer(A,RTT);
-
-    /* get next sequence number, wrap back to 0 */
-    A_nextseqnum = (A_nextseqnum + 1) % SEQSPACE;
-  }
-  /* if blocked,  window is full */
-  else {
-    if (TRACE > 0)
-      printf("----A: New message arrives, send window is full\n");
+      printf("----A: Send window full. Message dropped or buffered elsewhere.\n");
     window_full++;
+    return;
   }
+
+  struct pkt sendpkt;
+  sendpkt.seqnum = A_nextseqnum;
+  sendpkt.acknum = NOTINUSE;
+
+  for (int i = 0; i < 20; i++)
+    sendpkt.payload[i] = message.data[i];
+
+  sendpkt.checksum = ComputeChecksum(sendpkt);
+
+  // Store the packet in the window buffer
+  int index = A_nextseqnum % SR_WINDOW_SIZE;
+  A_window[index] = sendpkt;
+  A_acknowledged[index] = 0;
+
+  // Send the packet
+  tolayer3(A, sendpkt);
+  if (TRACE > 0)
+    printf("----A: Sent packet %d\n", sendpkt.seqnum);
+  packets_sent++;
+
+  // Start timer for this packet
+  starttimer(A, TIMEOUT_INTERVAL);
+
+  // Advance sequence number
+  A_nextseqnum = (A_nextseqnum + 1) % MAX_SEQ_NUM;
 }
 
 
