@@ -185,47 +185,60 @@ void A_init(void)
 /* called from layer 3, when a packet arrives for layer 4 at B*/
 void B_input(struct pkt packet)
 {
-  struct pkt sendpkt;
-  int i;
+  struct pkt ackpkt;
+  int seq = packet.seqnum;
+  int index = seq % SR_WINDOW_SIZE;
 
-  /* if not corrupted and received packet is in order */
-  if  ( (!IsCorrupted(packet))  && (packet.seqnum == expectedseqnum) ) {
+  if (IsCorrupted(packet)) {
     if (TRACE > 0)
-      printf("----B: packet %d is correctly received, send ACK!\n",packet.seqnum);
-    packets_received++;
-
-    /* deliver to receiving application */
-    tolayer5(B, packet.payload);
-
-    /* send an ACK for the received packet */
-    sendpkt.acknum = expectedseqnum;
-
-    /* update state variables */
-    expectedseqnum = (expectedseqnum + 1) % SEQSPACE;
-  }
-  else {
-    /* packet is corrupted or out of order resend last ACK */
-    if (TRACE > 0)
-      printf("----B: packet corrupted or not expected sequence number, resend ACK!\n");
-    if (expectedseqnum == 0)
-      sendpkt.acknum = SEQSPACE - 1;
-    else
-      sendpkt.acknum = expectedseqnum - 1;
+      printf("----B: Corrupted packet %d. Ignored.\n", seq);
+    return;
   }
 
-  /* create packet */
-  sendpkt.seqnum = B_nextseqnum;
-  B_nextseqnum = (B_nextseqnum + 1) % 2;
+  // Check if seq is within receiver window
+  if ((seq >= B_expected_base && seq < B_expected_base + SR_WINDOW_SIZE) ||
+      (B_expected_base + SR_WINDOW_SIZE >= MAX_SEQ_NUM &&
+       (seq < (B_expected_base + SR_WINDOW_SIZE) % MAX_SEQ_NUM))) {
 
-  /* we don't have any data to send.  fill payload with 0's */
-  for ( i=0; i<20 ; i++ )
-    sendpkt.payload[i] = '0';
+    // Buffer if not already received
+    if (!B_received[index]) {
+      B_window[index] = packet;
+      B_received[index] = 1;
 
-  /* computer checksum */
-  sendpkt.checksum = ComputeChecksum(sendpkt);
+      if (TRACE > 0)
+        printf("----B: Buffered packet %d\n", seq);
+    }
 
-  /* send out packet */
-  tolayer3 (B, sendpkt);
+    // Send ACK
+    ackpkt.seqnum = 0;  // Not used
+    ackpkt.acknum = seq;
+    for (int i = 0; i < 20; i++)
+      ackpkt.payload[i] = '0';
+    ackpkt.checksum = ComputeChecksum(ackpkt);
+    tolayer3(B, ackpkt);
+
+    if (TRACE > 0)
+      printf("----B: ACK %d sent\n", seq);
+
+    // Deliver any in-order packets starting from base
+    while (B_received[B_expected_base % SR_WINDOW_SIZE]) {
+      tolayer5(B, B_window[B_expected_base % SR_WINDOW_SIZE].payload);
+      B_received[B_expected_base % SR_WINDOW_SIZE] = 0;
+      B_expected_base = (B_expected_base + 1) % MAX_SEQ_NUM;
+    }
+
+  } else {
+    // Packet is out of window but send ACK anyway
+    ackpkt.seqnum = 0;
+    ackpkt.acknum = seq;
+    for (int i = 0; i < 20; i++)
+      ackpkt.payload[i] = '0';
+    ackpkt.checksum = ComputeChecksum(ackpkt);
+    tolayer3(B, ackpkt);
+
+    if (TRACE > 0)
+      printf("----B: Packet %d outside window. Sent ACK anyway.\n", seq);
+  }
 }
 
 /* the following routine will be called once (only) before any other */
