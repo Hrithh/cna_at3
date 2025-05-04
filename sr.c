@@ -57,10 +57,16 @@ bool IsCorrupted(struct pkt packet)
 
 /********* Sender (A) variables and functions ************/
 
-static struct pkt buffer[WINDOWSIZE];  /* array for storing packets waiting for ACK */
-static int windowfirst, windowlast;    /* array indexes of the first/last packet awaiting ACK */
-static int windowcount;                /* the number of packets currently awaiting an ACK */
-static int A_nextseqnum;               /* the next sequence number to be used by the sender */
+//static struct pkt buffer[WINDOWSIZE];  /* array for storing packets waiting for ACK */
+//static int windowfirst, windowlast;    /* array indexes of the first/last packet awaiting ACK */
+//static int windowcount;                /* the number of packets currently awaiting an ACK */
+//static int A_nextseqnum;               /* the next sequence number to be used by the sender */
+
+// Defined in sr.h
+extern struct pkt A_window[SR_WINDOW_SIZE];
+extern int A_acknowledged[SR_WINDOW_SIZE];
+extern int A_base;
+extern int A_nextseqnum;
 
 /* called from layer 5 (application layer), passed the message to be sent to other side */
 void A_output(struct msg message)
@@ -184,26 +190,26 @@ void A_timerinterrupt(void)
 
 
 
-/* the following routine will be called once (only) before any other */
-/* entity A routines are called. You can use it to do any initialization */
 void A_init(void)
 {
-  /* initialise A's window, buffer and sequence number */
-  A_nextseqnum = 0;  /* A starts with seq num 0, do not change this */
-  windowfirst = 0;
-  windowlast = -1;   /* windowlast is where the last packet sent is stored.
-		     new packets are placed in winlast + 1
-		     so initially this is set to -1
-		   */
-  windowcount = 0;
+  A_base = 0;
+  A_nextseqnum = 0;
+
+  for (int i = 0; i < SR_WINDOW_SIZE; i++) {
+    A_acknowledged[i] = 0;
+    memset(&A_window[i], 0, sizeof(struct pkt));
+  }
+
+  if (TRACE > 0)
+    printf("----A: Selective Repeat Sender initialized\n");
 }
 
 
 
 /********* Receiver (B)  variables and procedures ************/
 
-static int expectedseqnum; /* the sequence number expected next by the receiver */
-static int B_nextseqnum;   /* the sequence number for the next packets sent by B */
+//static int expectedseqnum; /* the sequence number expected next by the receiver */
+//static int B_nextseqnum;   /* the sequence number for the next packets sent by B */
 
 
 /* called from layer 3, when a packet arrives for layer 4 at B*/
@@ -256,8 +262,15 @@ void B_input(struct pkt packet)
 /* entity B routines are called. You can use it to do any initialization */
 void B_init(void)
 {
-  expectedseqnum = 0;
-  B_nextseqnum = 1;
+  B_expected_base = 0;
+
+  for (int i = 0; i < SR_WINDOW_SIZE; i++) {
+    B_received[i] = 0;
+    memset(&B_window[i], 0, sizeof(struct pkt));
+  }
+
+  if (TRACE > 0)
+    printf("----B: Selective Repeat Receiver initialized\n");
 }
 
 /******************************************************************************
